@@ -95,6 +95,25 @@ The RSpec suite stubs Fluentd, so it does not require Heroku or a New Relic key.
 NR_API_KEY=test bundle exec fluentd --dry-run -c config/fluentd.conf
 ```
 
+## Container
+
+Build the production image or run its test stage:
+
+```bash
+docker build -t heroku-log-forwarder .
+docker build --target test .
+docker run --rm -p 8080:8080 -e NR_API_KEY=test heroku-log-forwarder
+```
+
+Test the Fluent Bit-to-Fluentd Forward-protocol connection without calling New Relic:
+
+```bash
+docker compose up --build --abort-on-container-exit --exit-code-from verify
+docker compose down --volumes
+```
+
+The Compose stack starts this app with `config/fluentd.compose.conf`, sends a synthetic `fluentbit.connectivity` event from Fluent Bit, and waits until Fluentd writes that event to a shared volume.
+
 ## Limitations
 
 - This is a workaround for a New Relic and Heroku prefix mismatch. Remove it if New Relic supports `heroku[<dyno>]` runtime-metrics lines natively.

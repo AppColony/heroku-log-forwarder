@@ -32,4 +32,8 @@ bundle install
 bundle exec rspec
 bash bin/test
 NR_API_KEY=test bundle exec fluentd --dry-run -c config/fluentd.conf
+bundle exec fluentd --dry-run -c config/fluentd.compose.conf
+docker build --target test .
+docker compose up --build --abort-on-container-exit --exit-code-from verify
+docker compose down --volumes
 ```
