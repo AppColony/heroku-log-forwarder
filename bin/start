@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-bundle exec fluentd -c config/fluentd.conf &
+bundle exec fluentd -c "${FLUENTD_CONFIG:-config/fluentd.conf}" &
 fluentd_pid=$!
 
 cleanup() {
