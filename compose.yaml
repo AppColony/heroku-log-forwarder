@@ -1,0 +1,44 @@
+services:
+  forwarder:
+    build: .
+    environment:
+      FLUENTD_CONFIG: config/fluentd.compose.conf
+    volumes:
+      - fluentd-output:/tmp/fluentd
+    healthcheck:
+      test: ["CMD", "ruby", "-rnet/http", "-e", "exit(Net::HTTP.get_response(URI('http://127.0.0.1:8080/healthz')).is_a?(Net::HTTPSuccess) ? 0 : 1)"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  fluent-bit:
+    image: fluent/fluent-bit:4.2.0
+    depends_on:
+      forwarder:
+        condition: service_healthy
+    volumes:
+      - ./config/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+
+  verify:
+    image: alpine:3.22.2
+    depends_on:
+      forwarder:
+        condition: service_healthy
+      fluent-bit:
+        condition: service_started
+    volumes:
+      - fluentd-output:/tmp/fluentd:ro
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        for attempt in $(seq 1 30); do
+          if grep -R -q 'fluent-bit-to-fluentd' /tmp/fluentd; then
+            exit 0
+          fi
+          sleep 1
+        done
+        exit 1
+
+volumes:
+  fluentd-output:
