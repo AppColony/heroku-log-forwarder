@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+bundle exec fluentd -c config/fluentd.conf &
+fluentd_pid=$!
+
+cleanup() {
+  kill "$fluentd_pid" 2>/dev/null || true
+}
+
+trap cleanup EXIT INT TERM
+
+bundle exec puma -C config/puma.rb
