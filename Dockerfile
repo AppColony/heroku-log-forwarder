@@ -5,7 +5,10 @@ WORKDIR /app
 FROM base AS build
 
 RUN apt-get update \
-  && apt-get install --no-install-recommends -y build-essential \
+  && apt-get install --no-install-recommends -y \
+    build-essential \
+    libssl-dev \
+    pkg-config \
   && rm -rf /var/lib/apt/lists/*
 
 COPY Gemfile Gemfile.lock ./
@@ -24,7 +27,9 @@ RUN bundle config unset without \
 FROM base AS runtime
 
 RUN apt-get update \
-  && apt-get install --no-install-recommends -y ca-certificates \
+  && apt-get install --no-install-recommends -y \
+    ca-certificates \
+    libssl3 \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --create-home --shell /usr/sbin/nologin app
 
