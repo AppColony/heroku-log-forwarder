@@ -5,12 +5,22 @@ module LogForwarder
     RENDERED_LINE = /\A(?<timestamp>\S+)\s+heroku\[(?<dyno>[^\]]+)\]:\s+(?<rest>.*)\z/
     METRIC_PAIR = /sample#([a-zA-Z0-9_-]+)=([\d.]+)(MB|kB|GB|pages)?/
 
+    # Heroku emits this metric under plural (Heroku Postgres) and singular
+    # (Heroku Redis) spellings; normalize to the singular so one NRQL
+    # attribute serves both.
+    SYNONYM_KEYS = { "connections_percentage_used" => "connection_percentage_used" }.freeze
+
+    RUNTIME_METRICS_LOGTYPE = "heroku.runtime_metrics"
+    ADDON_METRICS_LOGTYPE = "heroku.addon_metrics"
+
     def self.parse(source, dyno, timestamp, message)
       rendered = rendered_prefix(message)
       if rendered
         message = rendered[:rest]
+        logtype = RUNTIME_METRICS_LOGTYPE
       else
         timestamp = nil if timestamp.to_s.empty?
+        logtype = dyno ? RUNTIME_METRICS_LOGTYPE : ADDON_METRICS_LOGTYPE
         dyno = nil if dyno.to_s.empty? || dyno == "-"
       end
 
@@ -20,7 +30,7 @@ module LogForwarder
       record = {
         "source" => source,
         "dyno_source" => dyno_source_from(message, rendered ? rendered[:dyno] : dyno),
-        "logtype" => "heroku.runtime_metrics"
+        "logtype" => logtype
       }
 
       epoch_timestamp = epoch_milliseconds(rendered ? rendered[:timestamp] : timestamp)
@@ -29,6 +39,7 @@ module LogForwarder
       record.merge(
         metrics.to_h do |key, value, unit|
           name = key.tr("-", "_")
+          name = SYNONYM_KEYS.fetch(name, name)
           name = "#{name}#{unit ? "_#{unit.downcase}" : ""}"
           [name, unit == "MB" ? value.to_f.round : value.to_f]
         end
