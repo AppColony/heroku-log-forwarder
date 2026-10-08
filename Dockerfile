@@ -11,17 +11,21 @@ RUN apt-get update \
     pkg-config \
   && rm -rf /var/lib/apt/lists/*
 
+ENV BUNDLE_DEPLOYMENT=1 \
+    BUNDLE_WITHOUT=test \
+    BUNDLE_PATH=/usr/local/bundle
+
 COPY Gemfile Gemfile.lock ./
 
-RUN bundle config set without test \
-  && bundle install
+RUN bundle install
 
 FROM build AS test
 
+ENV BUNDLE_WITHOUT=""
+
 COPY . ./
 
-RUN bundle config unset without \
-  && bundle install \
+RUN bundle install \
   && bundle exec rspec
 
 FROM base AS runtime
@@ -31,13 +35,16 @@ RUN apt-get update \
     ca-certificates \
     libssl3 \
   && rm -rf /var/lib/apt/lists/* \
-  && useradd --create-home --shell /usr/sbin/nologin app
+  && useradd --create-home --shell /usr/sbin/nologin app \
+  && mkdir -p /tmp/fluentd \
+  && chown app:app /tmp/fluentd
 
 COPY --from=build /usr/local/bundle /usr/local/bundle
 COPY --chown=app:app . ./
 
 ENV BUNDLE_DEPLOYMENT=1 \
     BUNDLE_WITHOUT=test \
+    BUNDLE_PATH=/usr/local/bundle \
     RACK_ENV=production
 
 USER app
