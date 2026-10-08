@@ -26,7 +26,8 @@ RSpec.describe LogForwarder::RuntimeMetrics do
 
     it "accepts each supported dyno name" do
       %w[web.1 sidekiq.1 sidekiq_integrations.1 rpush.1].each do |procid|
-        record = described_class.parse("makeshift-staging", procid, "2026-10-08T13:41:00.443714+00:00", message)
+        per_dyno_message = message.sub("source=sidekiq.1", "source=#{procid}")
+        record = described_class.parse("makeshift-staging", procid, "2026-10-08T13:41:00.443714+00:00", per_dyno_message)
 
         expect(record).to include("dyno_source" => procid)
       end
@@ -53,7 +54,7 @@ RSpec.describe LogForwarder::RuntimeMetrics do
     it "omits timestamp when it cannot be converted" do
       record = described_class.parse("makeshift-staging", "web.1", "not-a-time", message)
 
-      expect(record).to include("dyno_source" => "web.1")
+      expect(record).to include("dyno_source" => "sidekiq.1")
       expect(record).not_to include("timestamp")
     end
 
@@ -66,7 +67,32 @@ RSpec.describe LogForwarder::RuntimeMetrics do
     it "drops dyno when procid is the syslog nilvalue" do
       record = described_class.parse("makeshift-staging", "-", "2026-10-08T13:41:00+00:00", message)
 
-      expect(record).to include("dyno_source" => nil)
+      expect(record).to include("dyno_source" => "sidekiq.1")
+    end
+  end
+
+  describe "wire-frame attribution" do
+    it "prefers the message source token over the procid" do
+      message = "source=web.1 dyno=heroku.16814144.06d61a51-dd23-4a64-8df7-0dba4557951f sample#load_avg_1m=0.02"
+
+      record = described_class.parse("makeshift-staging", nil, "2026-10-08T14:37:27.905855+00:00", message)
+
+      expect(record).to include("dyno_source" => "web.1")
+    end
+
+    it "attributes addon metric frames to the addon source" do
+      message = "source=HEROKU_REDIS_MAUVE addon=redis-trapezoidal-46536 " \
+        "sample#active-connections=20 sample#max-connections=78"
+
+      record = described_class.parse("makeshift-staging", "heroku-redis", "2026-10-08T14:36:54+00:00", message)
+
+      expect(record).to include("dyno_source" => "HEROKU_REDIS_MAUVE", "active_connections" => 20)
+    end
+
+    it "falls back to the procid when the message carries no source token" do
+      record = described_class.parse("makeshift-staging", "web.1", "2026-10-08T13:41:00+00:00", "sample#load_avg_1m=0.02")
+
+      expect(record).to include("dyno_source" => "web.1")
     end
   end
 end

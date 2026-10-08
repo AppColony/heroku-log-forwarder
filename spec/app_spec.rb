@@ -60,6 +60,20 @@ RSpec.describe LogForwarderApp do
       )
     end
 
+    it "forwards frames carried with Heroku's newline-inclusive octet count" do
+      wire_frame = "<134>1 2026-10-08T14:37:27.905855+00:00 host heroku web.1 - " \
+        "source=web.1 dyno=heroku.16814144.06d61a51-dd23-4a64-8df7-0dba4557951f sample#load_avg_1m=0.02"
+      payload = "#{(wire_frame + "\n").bytesize} #{wire_frame}\n"
+
+      post "/newrelic/makeshift-staging", payload, "CONTENT_TYPE" => "application/logplex-1"
+
+      expect(last_response).to be_ok
+      expect(logger).to have_received(:post).with(
+        "heroku.runtime_metrics",
+        hash_including("dyno_source" => "web.1", "timestamp" => 1_791_470_247_905, "load_avg_1m" => 0.02)
+      )
+    end
+
     it "ignores non-runtime-metrics frames" do
       message_frame = "<40>1 2026-10-08T13:41:00+00:00 host app web.1 - app[web.1]: boot log"
 

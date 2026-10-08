@@ -3,7 +3,7 @@ module LogForwarder
     require "time"
 
     RENDERED_LINE = /\A(?<timestamp>\S+)\s+heroku\[(?<dyno>[^\]]+)\]:\s+(?<rest>.*)\z/
-    METRIC_PAIR = /sample#([a-zA-Z0-9_]+)=([\d.]+)(MB|kB|GB|pages)?/
+    METRIC_PAIR = /sample#([a-zA-Z0-9_-]+)=([\d.]+)(MB|kB|GB|pages)?/
 
     def self.parse(source, dyno, timestamp, message)
       rendered = rendered_prefix(message)
@@ -19,7 +19,7 @@ module LogForwarder
 
       record = {
         "source" => source,
-        "dyno_source" => rendered ? rendered[:dyno] : dyno,
+        "dyno_source" => dyno_source_from(message, rendered ? rendered[:dyno] : dyno),
         "logtype" => "heroku.runtime_metrics"
       }
 
@@ -28,10 +28,15 @@ module LogForwarder
 
       record.merge(
         metrics.to_h do |key, value, unit|
-          name = "#{key}#{unit ? "_#{unit.downcase}" : ""}"
+          name = key.tr("-", "_")
+          name = "#{name}#{unit ? "_#{unit.downcase}" : ""}"
           [name, unit == "MB" ? value.to_f.round : value.to_f]
         end
       )
+    end
+
+    def self.dyno_source_from(message, fallback_dyno)
+      message[/\bsource=(\S+)/, 1] || fallback_dyno
     end
 
     def self.rendered_prefix(message)

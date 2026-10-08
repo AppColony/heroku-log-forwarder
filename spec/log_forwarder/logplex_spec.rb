@@ -11,6 +11,14 @@ RSpec.describe LogForwarder::Logplex do
       expect(described_class.frames(payload)).to eq([first, second])
     end
 
+    it "strips the newline kernel Heroku counts into each frame" do
+      frame = "<134>1 2026-10-08T14:37:27.905855+00:00 host heroku web.1 - sample#load_avg_1m=0.02"
+
+      protocol_payload = "#{(frame + "\n").bytesize} #{frame}\n"
+
+      expect(described_class.frames(protocol_payload)).to eq([frame])
+    end
+
     it "rejects malformed frame lengths" do
       expect { described_class.frames("nope message") }
         .to raise_error(LogForwarder::Logplex::InvalidFrame, "invalid Logplex frame length")

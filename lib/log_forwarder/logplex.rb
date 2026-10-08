@@ -20,6 +20,11 @@ module LogForwarder
         frame = payload.byteslice(frame_start, length)
         raise InvalidFrame, "truncated Logplex frame" unless frame&.bytesize == length
 
+        # Heroku's octet count includes the frame's newline terminator, so the
+        # extracted frame ends with exactly one "\n". Strip it here; lib callers
+        # and specs must never need to anticipate it.
+        frame = frame.sub(/\n\z/, "")
+
         frames << frame
         offset = frame_start + length
       end
