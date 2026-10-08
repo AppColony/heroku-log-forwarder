@@ -1,0 +1,1 @@
+<40>1 2026-10-08T13:41:00.443714+00:00 host heroku compose.dyno.1 - source=compose.dyno.1 sample#load_avg_1m=0.25 sample#memory_total=459.95MB

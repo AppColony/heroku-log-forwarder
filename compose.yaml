@@ -28,12 +28,30 @@ services:
         condition: service_started
     volumes:
       - fluentd-output:/tmp/fluentd:ro
+      - ./config:/config:ro
     command:
       - /bin/sh
       - -ec
       - |
-        for attempt in $(seq 1 30); do
+        for attempt in $$(seq 1 30); do
           if grep -R -q 'fluent-bit-to-fluentd' /tmp/fluentd; then
+            break
+          fi
+          [ "$$attempt" -eq 30 ] && exit 1
+          sleep 1
+        done
+        echo "connectivity: fluent-bit -> fluentd ok"
+
+        count=$$(awk '{print length($$0)}' /config/runtime-metrics-frame.txt)
+        printf '%s %s' "$$count" "$$(cat /config/runtime-metrics-frame.txt)" > /tmp/payload.txt
+        wget -q --server-response --post-file=/tmp/payload.txt \
+          --header='Content-Type: application/logplex-1' \
+          http://forwarder:8080/newrelic/compose-test 2>&1 | grep -q 'HTTP/1.1 200' \
+          || { echo "drain path: POST rejected"; exit 1; }
+
+        for attempt in $$(seq 1 30); do
+          if grep -R -q 'load_avg_1m' /tmp/fluentd/runtime-metrics-events 2>/dev/null; then
+            echo "drain path: app -> fluentd -> file ok"
             exit 0
           fi
           sleep 1
