@@ -28,6 +28,30 @@ source-app dynos
 
 Heroku posts `application/logplex-1` octet-counted syslog batches. The Sinatra endpoint unwraps those batches, keeps runtime-metrics messages, and sends flat numeric metric attributes to Fluentd. Fluentd buffers and forwards them to New Relic.
 
+## Record schema
+
+Each forwarded New Relic record contains:
+
+| Attribute | Value |
+| --- | --- |
+| `timestamp` | Epoch milliseconds, converted from the syslog frame timestamp. Omitted when the frame timestamp is unparseable; the New Relic plugin then stamps its ingest time. |
+| `source` | Source app name from the drain URL path. |
+| `dyno_source` | Dyno name from the syslog procid (for example `web.1`). |
+| `logtype` | Always `heroku.runtime_metrics`. |
+| metric fields | One field per `sample#key=value` token, unit-suffixed where present (`memory_total_mb`). |
+
+The New Relic output plugin authenticates with the `NR_API_KEY` environment variable, which must contain a New Relic license key (sent as `X-License-Key`).
+
+## Wire format
+
+Heroku HTTPS drains deliver RFC5424-style frames where the timestamp, app name, and procid are envelope fields, and the message body carries only runtime metrics:
+
+```text
+146 <40>1 2026-10-08T13:41:00.443714+00:00 host heroku sidekiq.1 - source=sidekiq.1 dyno=heroku.x sample#load_avg_1m=0.00 sample#memory_total=459.95MB
+```
+
+The `heroku[<dyno>]:` prefix seen in `heroku logs` CLI output is a render of the envelope; it is not part of the delivered message. Lines from non-`heroku` apps are ignored.
+
 ## Deploy
 
 ```bash
