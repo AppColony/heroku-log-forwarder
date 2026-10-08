@@ -1,5 +1,6 @@
 require "spec_helper"
 require_relative "../app"
+require "time"
 
 RSpec.describe LogForwarderApp do
   let(:logger) { instance_double(Fluent::Logger::FluentLogger, post: true) }
@@ -9,8 +10,8 @@ RSpec.describe LogForwarderApp do
     described_class
   end
 
-  def logplex_batch(message)
-    "#{message.bytesize} #{message}"
+  def logplex_batch(frame)
+    "#{frame.bytesize} #{frame}"
   end
 
   describe "GET /healthz" do
@@ -23,14 +24,12 @@ RSpec.describe LogForwarderApp do
   end
 
   describe "POST /newrelic/:source" do
-    let(:line) do
-      "2026-10-05T16:44:15.708424+00:00 heroku[sidekiq.1]: " \
-        "source=sidekiq.1 dyno=heroku.x sample#load_avg_1m=0.00 " \
-        "sample#memory_total=459.95MB"
+    let(:frame) do
+      "<40>1 2026-10-08T13:41:00.443714+00:00 host heroku sidekiq.1 - " \
+        "source=sidekiq.1 dyno=heroku.x sample#load_avg_1m=0.00 sample#memory_total=459.95MB"
     end
-    let(:frame) { "<40>1 2026-10-05T16:44:15+00:00 host heroku sidekiq.1 - #{line}" }
 
-    it "forwards parsed metrics with source attribution" do
+    it "forwards wire-format runtime metrics with source attribution" do
       post "/newrelic/makeshift-staging", logplex_batch(frame),
            "CONTENT_TYPE" => "application/logplex-1"
 
@@ -40,6 +39,7 @@ RSpec.describe LogForwarderApp do
       expect(logger).to have_received(:post).with(
         "heroku.runtime_metrics",
         hash_including(
+          "timestamp" => 1_791_466_860_443,
           "source" => "makeshift-staging",
           "dyno_source" => "sidekiq.1",
           "logtype" => "heroku.runtime_metrics",
@@ -49,10 +49,30 @@ RSpec.describe LogForwarderApp do
       )
     end
 
-    it "ignores non-runtime-metrics frames" do
-      message = "<40>1 2026-10-05T16:44:15+00:00 host app web.1 - app[web.1]: boot log"
+    it "forwards the committed fixture as-is" do
+      post "/newrelic/local-test", File.read(File.expand_path("../fixtures/sample.log", __dir__)),
+           "CONTENT_TYPE" => "application/logplex-1"
 
-      post "/newrelic/makeshift-staging", logplex_batch(message)
+      expect(last_response).to be_ok
+      expect(logger).to have_received(:post).with(
+        "heroku.runtime_metrics",
+        hash_including("source" => "local-test", "dyno_source" => "sidekiq.1", "load_avg_1m" => 0.0)
+      )
+    end
+
+    it "ignores non-runtime-metrics frames" do
+      message_frame = "<40>1 2026-10-08T13:41:00+00:00 host app web.1 - app[web.1]: boot log"
+
+      post "/newrelic/makeshift-staging", logplex_batch(message_frame)
+
+      expect(last_response).to be_ok
+      expect(logger).not_to have_received(:post)
+    end
+
+    it "ignores heroku frames without sample pairs" do
+      message_frame = "<40>1 2026-10-08T13:41:00+00:00 host heroku web.1 - State changed from up to down"
+
+      post "/newrelic/makeshift-staging", logplex_batch(message_frame)
 
       expect(last_response).to be_ok
       expect(logger).not_to have_received(:post)

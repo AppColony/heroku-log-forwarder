@@ -19,8 +19,16 @@ class LogForwarderApp < Sinatra::Base
 
   post "/newrelic/:source" do
     LogForwarder::Logplex.frames(request.body.read).each do |frame|
-      line = LogForwarder::Logplex.message(frame)
-      record = line && LogForwarder::RuntimeMetrics.parse(params["source"], line)
+      parts = LogForwarder::Logplex.parse(frame)
+      next unless parts
+
+      dyno = parts["app"] == "heroku" ? parts["procid"] : nil
+      record = LogForwarder::RuntimeMetrics.parse(
+        params["source"],
+        dyno,
+        parts["timestamp"],
+        parts["message"]
+      )
       settings.fluent_logger.post("heroku.runtime_metrics", record) if record
     end
 
