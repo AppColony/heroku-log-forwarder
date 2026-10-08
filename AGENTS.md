@@ -15,7 +15,8 @@
 - Keep the drain path exactly `/newrelic/<source-app-name>`. The source path is required for multi-app attribution.
 - One forwarder serves all MakeShift applications. Do not create one forwarder per source app.
 - Keep the current stack: Heroku-24, Ruby 4.0.7, Sinatra, Fluentd. Consult the platform team before changing it.
-- Preserve the NR record schema: `timestamp`, `source`, `dyno_source`, and `logtype` are dashboard attributes.
+- Preserve the NR record schema: `timestamp` (epoch ms integer), `source`, `dyno_source`, and `logtype` are dashboard attributes.
+- Heroku HTTPS drains deliver syslog frames with timestamp/app/procid in the envelope and metrics-only message bodies. Parsers must accept the wire format; the rendered `heroku[dyno]:` CLI shape is a compat case only.
 - Do not add a database or user authentication. Heroku drains are unauthenticated.
 
 ## Common Changes
