@@ -92,6 +92,25 @@ RSpec.describe LogForwarderApp do
       expect(logger).not_to have_received(:post)
     end
 
+    it "forwards addon metric frames with the addon-metrics logtype" do
+      addon_frame = "<40>1 2026-10-08T14:36:54+00:00 host app heroku-postgres - " \
+        "source=HEROKU_POSTGRESQL_COBALT addon=postgresql-transparent-31333 " \
+        "sample#active-connections=27 sample#max-connections=200"
+
+      post "/newrelic/makeshift-staging", logplex_batch(addon_frame),
+           "CONTENT_TYPE" => "application/logplex-1"
+
+      expect(last_response).to be_ok
+      expect(logger).to have_received(:post).with(
+        "heroku.runtime_metrics",
+        hash_including(
+          "logtype" => "heroku.addon_metrics",
+          "dyno_source" => "HEROKU_POSTGRESQL_COBALT",
+          "active_connections" => 27
+        )
+      )
+    end
+
     it "rejects malformed Logplex framing" do
       post "/newrelic/makeshift-staging", "not-a-frame",
            "CONTENT_TYPE" => "application/logplex-1"

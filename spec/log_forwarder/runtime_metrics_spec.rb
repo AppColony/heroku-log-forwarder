@@ -80,6 +80,12 @@ RSpec.describe LogForwarder::RuntimeMetrics do
       expect(record).to include("dyno_source" => "web.1")
     end
 
+    it "falls back to the procid when the message carries no source token" do
+      record = described_class.parse("makeshift-staging", "web.1", "2026-10-08T13:41:00+00:00", "sample#load_avg_1m=0.02")
+
+      expect(record).to include("dyno_source" => "web.1")
+    end
+
     it "attributes addon metric frames to the addon source" do
       message = "source=HEROKU_REDIS_MAUVE addon=redis-trapezoidal-46536 " \
         "sample#active-connections=20 sample#max-connections=78"
@@ -88,11 +94,53 @@ RSpec.describe LogForwarder::RuntimeMetrics do
 
       expect(record).to include("dyno_source" => "HEROKU_REDIS_MAUVE", "active_connections" => 20)
     end
+  end
 
-    it "falls back to the procid when the message carries no source token" do
-      record = described_class.parse("makeshift-staging", "web.1", "2026-10-08T13:41:00+00:00", "sample#load_avg_1m=0.02")
+  describe "logtype split" do
+    it "tags dyno frames with the runtime-metrics logtype" do
+      record = described_class.parse(
+        "makeshift-staging",
+        "web.1",
+        "2026-10-08T14:37:27.905855+00:00",
+        "source=web.1 dyno=heroku.16814144.06d61a51-dd23-4a64-8df7-0dba4557951f sample#load_avg_1m=0.02"
+      )
 
-      expect(record).to include("dyno_source" => "web.1")
+      expect(record).to include("logtype" => "heroku.runtime_metrics")
+    end
+
+    it "tags addon frames without a dyno with the addon-metrics logtype" do
+      message = "source=HEROKU_POSTGRESQL_COBALT addon=postgresql-transparent-31333 " \
+        "sample#active-connections=27 sample#max-connections=200 " \
+        "sample#db-size-percentage-used=0.08015 sample#memory-percentage-used=0.97971"
+
+      record = described_class.parse("makeshift-staging", nil, "2026-10-08T14:36:54+00:00", message)
+
+      expect(record).to include("logtype" => "heroku.addon_metrics")
+      expect(record).to include(
+        "dyno_source" => "HEROKU_POSTGRESQL_COBALT",
+        "db_size_percentage_used" => 0.08015,
+        "memory_percentage_used" => 0.97971
+      )
+    end
+
+    it "keeps the rendered CLI compat path on the runtime-metrics logtype" do
+      rendered = "2026-10-05T16:44:15.708424+00:00 heroku[sidekiq.1]: sample#load_avg_1m=0.00"
+
+      record = described_class.parse("makeshift-staging", nil, nil, rendered)
+
+      expect(record).to include("logtype" => "heroku.runtime_metrics", "dyno_source" => "sidekiq.1")
+    end
+  end
+
+  describe "metric key normalization" do
+    it "unifies the postgres plural connections-percentage key to the singular" do
+      postgres = "source=HEROKU_POSTGRESQL_COBALT addon=postgresql-transparent-31333 " \
+        "sample#connections-percentage-used=0.13"
+
+      record = described_class.parse("makeshift-staging", nil, "2026-10-08T14:36:54+00:00", postgres)
+
+      expect(record).to include("connection_percentage_used" => 0.13)
+      expect(record).not_to include("connections_percentage_used")
     end
   end
 end
