@@ -35,15 +35,22 @@ git clone https://github.com/AppColony/heroku-log-forwarder.git
 cd heroku-log-forwarder
 bundle install
 
-heroku create makeshift-log-forwarder-staging --region us --remote log-forwarder
+# The Heroku app itself is provisioned by AppColony/gitops. Do not recreate it.
+heroku git:remote -a makeshift-log-forwarder-staging
 heroku config:set NR_API_KEY=<NR_INSIGHTS_INSERT_KEY> -a makeshift-log-forwarder-staging
 heroku config:set RACK_ENV=production -a makeshift-log-forwarder-staging
-git push log-forwarder main
+git push heroku main
 
 curl https://makeshift-log-forwarder-staging.herokuapp.com/healthz
 ```
 
 `NR_API_KEY` must be a New Relic Insights Insert Key. The Fluentd New Relic plugin sends it as `X-Insert-Key`.
+
+`AppColony/gitops` owns the existing staging app's Heroku configuration:
+application shell, Ruby buildpack, `standard-1x` web formation, and MakeShift
+staging pipeline coupling. This repository owns the application source; deploy
+new source revisions manually with `git push heroku main`. `NR_API_KEY` remains
+an operator-managed Heroku config var and is never stored in Terraform.
 
 ## Wire A Source App
 
