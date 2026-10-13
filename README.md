@@ -37,10 +37,38 @@ Each forwarded New Relic record contains:
 | `timestamp` | Epoch milliseconds, converted from the syslog frame timestamp. Omitted when the frame timestamp is unparseable; the New Relic plugin then stamps its ingest time. |
 | `source` | Source app name from the drain URL path. |
 | `dyno_source` | Dyno name from the syslog procid (for example `web.1`). |
-| `logtype` | Always `heroku.runtime_metrics`. |
+| `logtype` | `heroku.runtime_metrics` for dyno metrics, `heroku.addon_metrics` for add-on metrics. |
+| `makeshift_app` | Dashboard contract attribute, resolved from the drain route. |
+| `makeshift_environment` | Dashboard contract attribute, resolved from the drain route. |
 | metric fields | One field per `sample#key=value` token, unit-suffixed where present (`memory_total_mb`). |
 
 The New Relic output plugin authenticates with the `NR_API_KEY` environment variable, which must contain a New Relic license key (sent as `X-License-Key`).
+
+## Environment metadata
+
+The dashboard filters on two server-controlled attributes emitted with every record:
+
+```text
+makeshift_app            e.g. makesh-staging (the drain route's source segment)
+makeshift_environment    e.g. staging
+```
+
+Built-in route mapping lives in `lib/log_forwarder/metadata.rb`:
+
+| Drain route | `makeshift_app` | `makeshift_environment` |
+| --- | --- | --- |
+| `/newrelic/makeshift-staging` | `makeshift-staging` | `staging` |
+| `/newrelic/makeshift-prod` | `makeshift-prod` | `production` |
+
+Additional routes can be added without a deploy via the `MAKESHIFT_ROUTE_METADATA` environment variable (comma-separated `app:environment` pairs, no secrets allowed in it). Enrichment is merged into each record last, so a payload can never override the contract attributes. Unknown routes are rejected with `404` and forwarded nowhere — traffic is never silently labeled with a guessed environment.
+
+Dashboard verification (New Relic):
+
+```sql
+SELECT count(*) FROM Log
+WHERE logtype = 'heroku.runtime_metrics'
+FACET makeshift_app, makeshift_environment SINCE 30 minutes ago
+```
 
 ## Wire format
 
