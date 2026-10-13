@@ -104,6 +104,36 @@ staging pipeline coupling. This repository owns the application source; deploy
 new source revisions manually with `git push heroku main`. `NR_API_KEY` remains
 an operator-managed Heroku config var and is never stored in Terraform.
 
+## CI/CD
+
+Merging a pull request into `main` runs `.github/workflows/test.yml`. The test
+jobs gate two approval-gated deploy jobs:
+
+```text
+ruby + container (tests)
+  └─ deploy-staging        (environment: staging, manual approval)
+       └─ deploy-production  (environment: production, manual approval)
+```
+
+Each deploy job pushes the merged `main` revision to the target Heroku app over
+HTTPS and finishes with a `GET /healthz` smoke check, retried for up to 30
+seconds to absorb dyno restarts during release. Deploys run only on merges to
+`main` or manual `workflow_dispatch` replays — pull request runs deploy nothing.
+
+`deploy-staging` targets `log-forwarder-staging`. `deploy-production` reads its
+app name from the `PROD_APP_NAME` repository variable and skips until that
+variable is set; the production forwarder is provisioned by `AppColony/gitops`.
+
+Approval gates, the `main`-only deployment branch rule, and environment-scoped
+secrets are configured in repo Settings → Environments (`staging`,
+`production`):
+
+| Name | Scope | Value |
+| --- | --- | --- |
+| `HEROKU_API_TOKEN` | both `staging` and `production` environments | Heroku deploy token for a CI account with access to the target apps |
+| `HEROKU_EMAIL` | both `staging` and `production` environments | Email of that CI Heroku account |
+| `PROD_APP_NAME` | repository variable | Production forwarder app name, set after gitops provisions it |
+
 ## Wire A Source App
 
 Add a second HTTPS drain in the source app's `gitops` workspace:
