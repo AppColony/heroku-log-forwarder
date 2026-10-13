@@ -43,6 +43,8 @@ RSpec.describe LogForwarderApp do
           "source" => "makeshift-staging",
           "dyno_source" => "sidekiq.1",
           "logtype" => "heroku.runtime_metrics",
+          "makeshift_app" => "makeshift-staging",
+          "makeshift_environment" => "staging",
           "load_avg_1m" => 0.0,
           "memory_total_mb" => 460
         )
@@ -50,13 +52,36 @@ RSpec.describe LogForwarderApp do
     end
 
     it "forwards the committed fixture as-is" do
-      post "/newrelic/local-test", File.read(File.expand_path("../fixtures/sample.log", __dir__)),
+      post "/newrelic/makeshift-staging", File.read(File.expand_path("../fixtures/sample.log", __dir__)),
            "CONTENT_TYPE" => "application/logplex-1"
 
       expect(last_response).to be_ok
       expect(logger).to have_received(:post).with(
         "heroku.runtime_metrics",
-        hash_including("source" => "local-test", "dyno_source" => "sidekiq.1", "load_avg_1m" => 0.0)
+        hash_including(
+          "source" => "makeshift-staging",
+          "makeshift_app" => "makeshift-staging",
+          "makeshift_environment" => "staging",
+          "dyno_source" => "sidekiq.1",
+          "load_avg_1m" => 0.0
+        )
+      )
+    end
+
+    it "keeps route-derived metadata when the payload carries the contract keys" do
+      message_frame = "<40>1 2026-10-08T13:41:00.443714+00:00 host heroku sidekiq.1 - " \
+        "source=sidekiq.1 sample#makeshift_app=1.0 sample#makeshift_environment=2.0"
+
+      post "/newrelic/makeshift-staging", logplex_batch(message_frame),
+           "CONTENT_TYPE" => "application/logplex-1"
+
+      expect(last_response).to be_ok
+      expect(logger).to have_received(:post).with(
+        "heroku.runtime_metrics",
+        hash_including(
+          "makeshift_app" => "makeshift-staging",
+          "makeshift_environment" => "staging"
+        )
       )
     end
 
@@ -105,10 +130,21 @@ RSpec.describe LogForwarderApp do
         "heroku.runtime_metrics",
         hash_including(
           "logtype" => "heroku.addon_metrics",
+          "makeshift_app" => "makeshift-staging",
+          "makeshift_environment" => "staging",
           "dyno_source" => "HEROKU_POSTGRESQL_COBALT",
           "active_connections" => 27
         )
       )
+    end
+
+    it "rejects unknown routes without forwarding" do
+      post "/newrelic/unknown-app", logplex_batch(frame),
+           "CONTENT_TYPE" => "application/logplex-1"
+
+      expect(last_response.status).to eq(404)
+      expect(last_response.body).to be_empty
+      expect(logger).not_to have_received(:post)
     end
 
     it "rejects malformed Logplex framing" do
