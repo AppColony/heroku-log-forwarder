@@ -2,6 +2,7 @@ require "fluent-logger"
 require "sinatra/base"
 
 require_relative "lib/log_forwarder/logplex"
+require_relative "lib/log_forwarder/metadata"
 require_relative "lib/log_forwarder/runtime_metrics"
 
 class LogForwarderApp < Sinatra::Base
@@ -18,6 +19,9 @@ class LogForwarderApp < Sinatra::Base
   end
 
   post "/newrelic/:source" do
+    metadata = LogForwarder::Metadata.resolve(params["source"])
+    halt 404, "" unless metadata
+
     LogForwarder::Logplex.frames(request.body.read).each do |frame|
       parts = LogForwarder::Logplex.parse(frame)
       next unless parts
@@ -29,7 +33,12 @@ class LogForwarderApp < Sinatra::Base
         parts["timestamp"],
         parts["message"]
       )
-      settings.fluent_logger.post("heroku.runtime_metrics", record) if record
+      next unless record
+
+      settings.fluent_logger.post(
+        "heroku.runtime_metrics",
+        LogForwarder::Metadata.enrich(record, metadata)
+      )
     end
 
     status 200

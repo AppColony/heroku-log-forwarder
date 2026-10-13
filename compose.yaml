@@ -46,11 +46,13 @@ services:
         printf '%s %s' "$$count" "$$(cat /config/runtime-metrics-frame.txt)" > /tmp/payload.txt
         wget -q --server-response --post-file=/tmp/payload.txt \
           --header='Content-Type: application/logplex-1' \
-          http://forwarder:8080/newrelic/compose-test 2>&1 | grep -q 'HTTP/1.1 200' \
+          http://forwarder:8080/newrelic/makeshift-staging 2>&1 | grep -q 'HTTP/1.1 200' \
           || { echo "drain path: POST rejected"; exit 1; }
 
         for attempt in $$(seq 1 30); do
-          if grep -R -q 'load_avg_1m' /tmp/fluentd/runtime-metrics-events 2>/dev/null; then
+          if grep -R -q 'load_avg_1m' /tmp/fluentd/runtime-metrics-events 2>/dev/null \
+            && grep -R -q 'makeshift_environment":"staging"' /tmp/fluentd/runtime-metrics-events 2>/dev/null \
+            && grep -R -q 'makeshift_app":"makeshift-staging"' /tmp/fluentd/runtime-metrics-events 2>/dev/null; then
             echo "drain path: app -> fluentd -> file ok"
             exit 0
           fi

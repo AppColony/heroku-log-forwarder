@@ -4,7 +4,8 @@
 
 - `app.rb`: Sinatra HTTP endpoints only.
 - `lib/log_forwarder/logplex.rb`: Logplex octet-frame and syslog-envelope parsing.
-- `lib/log_forwarder/runtime_metrics.rb`: runtime-metrics record generation.
+- `lib/log_forwarder/metadata.rb`: route-to-environment mapping and record enrichment.
+- `lib/log_forwarder/runtime_metrics.rb`: runtime and add-on metric record generation.
 - `config/fluentd.conf`: local Forward input and New Relic output.
 - `spec/`: RSpec unit and request coverage.
 
@@ -16,6 +17,8 @@
 - One forwarder serves all MakeShift applications. Do not create one forwarder per source app.
 - Keep the current stack: Heroku-24, Ruby 4.0.7, Sinatra, Fluentd. Consult the platform team before changing it.
 - Preserve the NR record schema: `timestamp` (epoch ms integer), `source`, `dyno_source`, and `logtype` are dashboard attributes.
+- Dashboard contract: every emitted record includes `makeshift_app` and `makeshift_environment`, resolved from the drain route in `lib/log_forwarder/metadata.rb` and merged last so payload values can never override them. Unknown routes get 404, never a guessed environment.
+- Extra routes can be added without a deploy via `MAKESHIFT_ROUTE_METADATA=app:environment,app:environment`. Never put secrets in this variable.
 - Heroku HTTPS drains deliver syslog frames with timestamp/app/procid in the envelope and metrics-only message bodies. Parsers must accept the wire format; the rendered `heroku[dyno]:` CLI shape is a compat case only.
 - Do not add a database or user authentication. Heroku drains are unauthenticated.
 
@@ -23,6 +26,7 @@
 
 - New Logplex framing behavior: update `lib/log_forwarder/logplex.rb` and its unit specs.
 - New runtime-metrics format or field: update `lib/log_forwarder/runtime_metrics.rb` and its unit specs.
+- New source app or environment mapping: update `lib/log_forwarder/metadata.rb` (or set `MAKESHIFT_ROUTE_METADATA`) and `spec/log_forwarder/metadata_spec.rb`.
 - New HTTP endpoint: update `app.rb` and `spec/app_spec.rb`.
 - New New Relic transport behavior: update `config/fluentd.conf` and validate it with Fluentd dry-run.
 
