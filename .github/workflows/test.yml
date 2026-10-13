@@ -1,13 +1,17 @@
-name: Test
+name: Test and Deploy
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  STAGING_APP: log-forwarder-staging
 
 jobs:
   ruby:
@@ -32,3 +36,75 @@ jobs:
       - run: docker compose up --build --abort-on-container-exit --exit-code-from verify
       - if: always()
         run: docker compose down --volumes
+
+  deploy-staging:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [ruby, container]
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency: deploy-staging
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Write Heroku git credentials
+        env:
+          HEROKU_EMAIL: ${{ secrets.HEROKU_EMAIL }}
+          HEROKU_API_TOKEN: ${{ secrets.HEROKU_API_TOKEN }}
+        run: |
+          printf 'machine git.heroku.com\n  login %s\n  password %s\n' \
+            "$HEROKU_EMAIL" "$HEROKU_API_TOKEN" > "$HOME/.netrc"
+          chmod 600 "$HOME/.netrc"
+      - name: Push to staging
+        run: |
+          git remote add heroku "https://git.heroku.com/${STAGING_APP}.git"
+          git push heroku HEAD:main
+      - name: Smoke check healthz
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 30 "https://${STAGING_APP}.herokuapp.com/healthz" >/dev/null; then
+              echo "healthz OK"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "healthz check failed" >&2
+          exit 1
+
+  deploy-production:
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.PROD_APP_NAME != ''
+    needs: [ruby, container, deploy-staging]
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: deploy-production
+    env:
+      APP: ${{ vars.PROD_APP_NAME }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Write Heroku git credentials
+        env:
+          HEROKU_EMAIL: ${{ secrets.HEROKU_EMAIL }}
+          HEROKU_API_TOKEN: ${{ secrets.HEROKU_API_TOKEN }}
+        run: |
+          printf 'machine git.heroku.com\n  login %s\n  password %s\n' \
+            "$HEROKU_EMAIL" "$HEROKU_API_TOKEN" > "$HOME/.netrc"
+          chmod 600 "$HOME/.netrc"
+      - name: Push to production
+        run: |
+          git remote add heroku "https://git.heroku.com/${APP}.git"
+          git push heroku HEAD:main
+      - name: Smoke check healthz
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 30 "https://${APP}.herokuapp.com/healthz" >/dev/null; then
+              echo "healthz OK"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "healthz check failed" >&2
+          exit 1
